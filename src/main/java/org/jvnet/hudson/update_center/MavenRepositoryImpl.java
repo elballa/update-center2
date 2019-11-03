@@ -31,6 +31,8 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.factory.ArtifactFactory;
+import org.apache.maven.artifact.manager.CredentialsDataSourceException;
+import org.apache.maven.artifact.manager.WagonManager;
 import org.apache.maven.artifact.repository.ArtifactRepository;
 import org.apache.maven.artifact.repository.ArtifactRepositoryFactory;
 import org.apache.maven.artifact.repository.ArtifactRepositoryPolicy;
@@ -53,6 +55,7 @@ import org.sonatype.nexus.index.FlatSearchRequest;
 import org.sonatype.nexus.index.FlatSearchResponse;
 import org.sonatype.nexus.index.NexusIndexer;
 import org.sonatype.nexus.index.context.DefaultIndexingContext;
+import org.sonatype.nexus.index.context.IndexCreator;
 import org.sonatype.nexus.index.context.IndexUtils;
 import org.sonatype.nexus.index.context.NexusAnalyzer;
 import org.sonatype.nexus.index.context.NexusIndexWriter;
@@ -94,9 +97,11 @@ public class MavenRepositoryImpl extends MavenRepository {
     protected ArtifactRepositoryFactory arf;
     private PlexusContainer plexus;
     private boolean offlineIndex;
+    private boolean directLink;
     protected List<PluginFilter> pluginFilters = new ArrayList<>();
 
-    public MavenRepositoryImpl() throws Exception {
+    public MavenRepositoryImpl(boolean directLink) throws Exception {
+        this.directLink = directLink;
         ClassWorld classWorld = new ClassWorld( "plexus.core", MavenRepositoryImpl.class.getClassLoader() );
         ContainerConfiguration configuration = new DefaultContainerConfiguration().setClassWorld( classWorld );
         plexus = new DefaultPlexusContainer( configuration );
@@ -155,24 +160,28 @@ public class MavenRepositoryImpl extends MavenRepository {
      *      URL of the Maven repository. Used to resolve artifacts.
      */
     public void addRemoteRepository(String id, File indexDirectory, URL repository) throws IOException, UnsupportedExistingLuceneIndexException {
-        indexer.addIndexingContext(id, id,null, indexDirectory,null,null, NexusIndexer.DEFAULT_INDEX);
+        List<IndexCreator> indexCreatorList = new ArrayList<IndexCreator>(NexusIndexer.DEFAULT_INDEX);
+        indexCreatorList.add(new RepositoryIndexCreator(repository));
+        indexer.addIndexingContext(id, id,null, indexDirectory,repository.toString(),null, indexCreatorList);
         remoteRepositories.add(
                 arf.createArtifactRepository(id, repository.toExternalForm(),
                         new DefaultRepositoryLayout(), POLICY, POLICY));
     }
 
-    public void addRemoteRepository(String id, URL repository) throws IOException, UnsupportedExistingLuceneIndexException {
-        addRemoteRepository(id,new URL(repository,".index/nexus-maven-repository-index.gz"), repository);
+    public void addRemoteRepository(String id, URL repository, String username, String password) throws IOException, UnsupportedExistingLuceneIndexException, ComponentLookupException, CredentialsDataSourceException {
+        WagonManager wagonManager = plexus.lookup(WagonManager.class);
+        wagonManager.addAuthenticationCredentials(id, username, password, null, null);
+        addRemoteRepository(id,new URL(repository,".index/nexus-maven-repository-index.gz"), repository, username, password);
     }
 
-    public void addRemoteRepository(String id, URL remoteIndex, URL repository) throws IOException, UnsupportedExistingLuceneIndexException {
-        addRemoteRepository(id,loadIndex(id,remoteIndex), repository);
+    public void addRemoteRepository(String id, URL remoteIndex, URL repository, String username, String password) throws IOException, UnsupportedExistingLuceneIndexException, ComponentLookupException, CredentialsDataSourceException {
+        addRemoteRepository(id,loadIndex(id, remoteIndex, username, password), repository);
     }
 
     /**
      * Loads a remote repository index (.zip or .gz), convert it to Lucene index and return it.
      */
-    private File loadIndex(String id, URL url) throws IOException, UnsupportedExistingLuceneIndexException {
+    private File loadIndex(String id, URL url, String username, String password) throws IOException, UnsupportedExistingLuceneIndexException, ComponentLookupException, CredentialsDataSourceException {
         File dir = new File(new File(System.getProperty("java.io.tmpdir")), "maven-index/" + id);
         File local = new File(dir,"index"+getExtension(url));
         File expanded = new File(dir,"expanded");
@@ -180,6 +189,9 @@ public class MavenRepositoryImpl extends MavenRepository {
         URLConnection con = url.openConnection();
         if (url.getUserInfo()!=null) {
             con.setRequestProperty("Authorization", "Basic " + Base64.getEncoder().encodeToString(url.getUserInfo().getBytes("UTF-8")));
+        } else {
+            String userInfo = username + ":" + password;
+            con.setRequestProperty("Authorization", "Basic " + Base64.getEncoder().encodeToString(userInfo.getBytes("UTF-8")));
         }
 
         if (!expanded.exists() || !local.exists() || (local.lastModified() < con.getLastModified() && !offlineIndex)) {
@@ -333,7 +345,7 @@ public class MavenRepositoryImpl extends MavenRepository {
  */
 
     protected HPI createHpiArtifact(ArtifactInfo a, PluginHistory p) throws AbstractArtifactResolutionException {
-        return new HPI(this,p,a);
+        return directLink ? new HPIDirect(this, p, a) : new HPI(this, p, a);
     }
 
     protected HudsonWar createHudsonWarArtifact(ArtifactInfo a) {

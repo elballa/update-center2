@@ -19,7 +19,7 @@ public abstract class ArtifactSource {
     public static ArtifactSource getInstance() {
         if (instance == null) {
             if (ARTIFACTORY_API_PASSWORD != null && ARTIFACTORY_API_USERNAME != null) {
-                instance = new ArtifactoryArtifactSource(ARTIFACTORY_API_USERNAME, ARTIFACTORY_API_PASSWORD);
+                instance = new MavenArtifactSource(); //new ArtifactoryArtifactSource(ARTIFACTORY_API_USERNAME, ARTIFACTORY_API_PASSWORD);
             } else {
                 instance = new MavenArtifactSource();
             }

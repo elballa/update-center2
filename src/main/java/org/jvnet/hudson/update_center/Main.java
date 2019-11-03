@@ -105,6 +105,40 @@ public class Main {
     @Option(name="-www",usage="Build updates.jenkins-ci.org layout")
     public File www = null;
 
+    @Option(name="-repositoryName",usage="Name of the repository.", required = true)
+    public String repositoryName;
+
+    @Option(name="-repository",usage="Repository for plugins.", required = true)
+    public String repository;
+
+    @Option(name="-username",usage="Username to access repostory.", required = true)
+    public String username;
+
+    @Option(name="-password",usage="Password to access repository.", required = true)
+    public String password;
+
+    @Option(name="-remoteIndex",usage="Nexus index file in repository.")
+    public String remoteIndex;
+
+    @Option(name="-directLink", usage="links to the hpi in repository directly.")
+    public boolean directLink;
+
+    @Option(name="-embeddedWiki", usage="Do not force URLs to plugin.jenkins.io but use embedded url in the pom file.")
+    public boolean embeddedWiki;
+
+    @Option(name="-skipHtaccess", usage="Do not create Htaccess file.")
+    public boolean skipHtaccess;
+
+    @Option(name="-skipDocumentationUrl", usage="Do not create plugin-documentation-urls.json file.")
+    public boolean skipDocumentationUrl;
+
+    @Option(name="-skipUpdateCenterActual", usage="Do not create update-center.actual.json file.")
+    public boolean skipUpdateCenterActual;
+
+    @Option(name="-skipUpdateCenterHtml", usage="Do not create update-center.json.html file.")
+    public boolean skipUpdateCenterHtml;
+
+
     /**
      * This options builds the http://updates.jenkins-ci.org/download files,
      * which consists of a series of index.html that lists available versions of plugins and cores.
@@ -249,6 +283,10 @@ public class Main {
 
     public void run() throws Exception {
 
+        if (repository != null && !repository.endsWith("/")) {
+            repository += "/";
+        }
+
         if (www!=null) {
             prepareStandardDirectoryLayout();
         }
@@ -258,10 +296,16 @@ public class Main {
         LatestLinkBuilder latest = createHtaccessWriter();
 
         JSONObject ucRoot = buildUpdateCenterJson(repo, latest);
-        writeToFile(mapPluginToDocumentationUrl(), urlmap);
+        if (!skipDocumentationUrl) {
+            writeToFile(mapPluginToDocumentationUrl(), urlmap);
+        }
         writeToFile(updateCenterPostCallJson(ucRoot), jsonp);
-        writeToFile(prettyPrintJson(ucRoot), json);
-        writeToFile(updateCenterPostMessageHtml(ucRoot), new File(jsonp.getPath()+".html"));
+        if (!skipUpdateCenterActual) {
+            writeToFile(prettyPrintJson(ucRoot), json);
+        }
+        if (!skipUpdateCenterHtml) {
+            writeToFile(updateCenterPostMessageHtml(ucRoot), new File(jsonp.getPath()+".html"));
+        }
 
         if (!skipPluginVersions) {
             writeToFile(prettyPrintJson(buildPluginVersionsJson(repo)), pluginVersions);
@@ -300,8 +344,10 @@ public class Main {
     }
 
     private LatestLinkBuilder createHtaccessWriter() throws IOException {
-        latest.mkdirs();
-        return new LatestLinkBuilder(latest);
+        if (!skipHtaccess) {
+            latest.mkdirs();
+        }
+        return new LatestLinkBuilder(latest, skipHtaccess);
     }
 
     private JSONObject buildPluginVersionsJson(MavenRepository repo) throws Exception {
@@ -351,7 +397,7 @@ public class Main {
 
     protected MavenRepository createRepository() throws Exception {
 
-        MavenRepositoryImpl base = DefaultMavenRepositoryBuilder.getInstance();
+        MavenRepositoryImpl base = DefaultMavenRepositoryBuilder.getInstance(repositoryName, repository, username, password, remoteIndex, directLink);
 
         // ensure that we reset plugin filters between batch executions
         base.resetPluginFilters();
@@ -450,6 +496,7 @@ public class Main {
 
                 // Gather the plugin properties from the plugin file and the wiki
                 Plugin plugin = new Plugin(hpi);
+                plugin.setEmbeddedWiki(embeddedWiki);
 
                 pluginToDocumentationUrl.put(plugin.artifactId, plugin.getPluginUrl());
 
@@ -563,6 +610,7 @@ public class Main {
                 JSONObject o = new JSONObject();
                 try {
                     Plugin plugin = new Plugin(h);
+                    plugin.setEmbeddedWiki(embeddedWiki);
 
                     if (h.getTimestampAsDate().after(oldestDate.getTime())) {
                         String title = plugin.getName();

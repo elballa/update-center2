@@ -32,12 +32,24 @@ public class DefaultMavenRepositoryBuilder {
     }
 
     private static MavenRepositoryImpl instance;
-    
+
     public static MavenRepositoryImpl getInstance() throws Exception {
         if (instance == null) {
-            instance = new MavenRepositoryImpl();
-            instance.addRemoteRepository("public", new URL("http://repo.jenkins-ci.org/public/"));
+            instance = getInstance(null, null, null, null, null, false);
         }
+        return instance;
+    }
+
+    public static MavenRepositoryImpl getInstance(String repositoryName, String repository, String username, String password, String remoteIndex, boolean directLink) throws Exception {
+        MavenRepositoryImpl instance = new MavenRepositoryImpl(directLink);
+
+        URL repositoryUrl = new URL(repository);
+        if (remoteIndex == null) {
+            instance.addRemoteRepository(repositoryName, repositoryUrl, username, password);
+        } else {
+            instance.addRemoteRepository(repositoryName, new URL(repositoryUrl, remoteIndex), repositoryUrl, username, password);
+        }
+
         return instance;
     }
 }

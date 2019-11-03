@@ -85,6 +85,11 @@ public class Plugin {
     private final SAXReader xmlReader;
 
     /**
+     * Whether not to force the URL to plugins.jenkins.io
+     */
+    private boolean embeddedWiki = false;
+
+    /**
      * POM parsed as a DOM.
      */
     private Document pom;
@@ -132,6 +137,14 @@ public class Plugin {
 
     public Plugin(HPI hpi) throws IOException {
         this(hpi.artifact.artifactId, hpi,  null);
+    }
+
+    public void setEmbeddedWiki(boolean embeddedWiki) {
+        this.embeddedWiki = embeddedWiki;
+    }
+
+    public boolean isEmbeddedWiki() {
+        return embeddedWiki;
     }
 
     private Document getPom() throws IOException {
@@ -366,24 +379,24 @@ public class Plugin {
                 System.out.println("** Failed to determine SCM URL from POM or parent POM of " + artifactId);
             }
             scm = interpolateProjectName(scm);
-            String originalScm = scm;
-            scm = requireHttpsGitHubJenkinsciUrl(scm);
-            if (originalScm != null && scm == null) {
-                System.out.println("** Rejecting URL outside GitHub.com/jenkinsci for " + artifactId + ": " + originalScm);
-            }
-
-            if (scm == null) {
-                // Last resort: check whether a ${artifactId}-plugin repo in jenkinsci exists, if so, use that
-                scm = "https://github.com/jenkinsci/" + artifactId + "-plugin";
-                System.out.println("** Falling back to default repo for " + artifactId + ": " + scm);
-
-                String checkedScm = scm;
-                // Check whether the fallback repo actually exists, if not, don't publish the repo name
-                scm = requireGitHubRepoExistence(scm);
-                if (scm == null) {
-                    System.out.println("** Repository does not actually exist: " + checkedScm);
-                }
-            }
+//            String originalScm = scm;
+//            scm = requireHttpsGitHubJenkinsciUrl(scm);
+//            if (originalScm != null && scm == null) {
+//                System.out.println("** Rejecting URL outside GitHub.com/jenkinsci for " + artifactId + ": " + originalScm);
+//            }
+//
+//            if (scm == null) {
+//                // Last resort: check whether a ${artifactId}-plugin repo in jenkinsci exists, if so, use that
+//                scm = "https://github.com/jenkinsci/" + artifactId + "-plugin";
+//                System.out.println("** Falling back to default repo for " + artifactId + ": " + scm);
+//
+//                String checkedScm = scm;
+//                // Check whether the fallback repo actually exists, if not, don't publish the repo name
+//                scm = requireGitHubRepoExistence(scm);
+//                if (scm == null) {
+//                    System.out.println("** Repository does not actually exist: " + checkedScm);
+//                }
+//            }
 
             return scm;
         }
@@ -453,7 +466,11 @@ public class Plugin {
             json.put("scm", scm);
         }
 
-        json.put("wiki", "https://plugins.jenkins.io/" + artifactId);
+        if (isEmbeddedWiki()) {
+            json.put("wiki", getPluginUrl());
+        } else {
+            json.put("wiki", "https://plugins.jenkins.io/" + artifactId);
+        }
 
         json.put("labels", getLabels());
 
